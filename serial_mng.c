@@ -1,13 +1,14 @@
 /**
- * @file SerialManager.c
- * @author your name (you@domain.com)
- * @brief 
+ * @file serial_mng.c
+ * @author Lautaro Vera (lautarovera93@gmail.com)
+ * @brief Manages the connection with Emulator Service component
  * @version 0.1
  * @date 2022-06-11
  * 
  * @copyright Copyright (c) 2022
  * 
  */
+/*------------------------------------- Includes -------------------------------------------------*/
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -19,11 +20,12 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <fcntl.h>
-
 #include "serial_mng.h"
 
+/*------------------------------------- Globals --------------------------------------------------*/
 static int serial_socket;
 
+/*------------------------------------- Publics --------------------------------------------------*/
 int serial_open(void)
 {
     struct sockaddr_in serveraddr;
@@ -38,28 +40,23 @@ int serial_open(void)
     serveraddr.sin_port = htons(4040);
     if (0 >= inet_pton(AF_INET, "127.0.0.1", &(serveraddr.sin_addr)))
     {
-        fprintf(stderr, "ERROR invalid server IP\r\n");
+        fprintf(stderr, "Serial error: invalid server IP\r\n");
         ret_val = -1;
     }
 
-    if (0 == ret_val)
+    while (0 == ret_val)
     {
-        for (;;)
+        printf("Connecting emulator...\r\n");
+        int retcode = connect(serial_socket, (const struct sockaddr *)&serveraddr, sizeof(serveraddr));
+        printf("\tConnect return code:%d\r\n", retcode);
+        if (0 <= retcode)
         {
-            printf("Conectando a emulador...\n");
-            int retcode = connect(serial_socket, (const struct sockaddr *)&serveraddr, sizeof(serveraddr));
-            printf("Connect response:%d\n", retcode);
-            if (0 <= retcode)
-            {
-                usleep(100000);
-                break;
-            }
-            sleep(1);
+            usleep(100000);
+            break;
         }
-        printf("Emulador conectado\n");
-
-        ret_val = 0;
+        sleep(1);
     }
+    printf("Emulator connected\r\n");
 
     return ret_val;
 }
