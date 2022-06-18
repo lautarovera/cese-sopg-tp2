@@ -23,3 +23,13 @@ Desde la raíz, una vez compilado, abrir un terminal y ejecutar lo siguiente:
 username@host:~/cese-sopg-tp1$ ./serialService
 ```
 
+## Diseño
+
+El software se basa en la utilización de dos módulos o componentes, uno llamado Serial Manager y otro llamado Interface Manager:
++ **Serial Manager**: Es el encargado de gestionar la comunicación con *Serial Emulator*, abriendo un *socket* TCP como cliente.
++ **Interface Manager**: Es el encargado de gestionar la comunicación con *Interface Service*, abriendo un *socket* TCP como servidor.
+Se consideró la utilización de un hilo además del principal, ejecutándose dos tareas de manera concurrente:
++ **serial_task**: Recibe datos del servidor del *Serial Emulator*, enviando sólo tramas válidas a *Interface Service*. Se ejecuta en el hilo principal.
++ **interface_task**: Recibe datos del cliente del *Interface Service*, enviando sólo tramas válidas a *Serial Emulator*. Se ejecuta en el hilo secundario. 
+El hilo principal se encarga de inicializar ambos componentes, del manejo de las señales SIGINT y SIGTERM, y de la tarea **serial_task**.
+El hilo secundario se encarga de ejecutar la tarea **interface_task**.

@@ -27,14 +27,14 @@
 #define INTERFACE_SET_EVENT ">OUT:%1d,%1d"
 
 /*------------------------------------- Globals --------------------------------------------------*/
-static bool interface_ready = false;
-static bool serial_ready = false;
+static bool serial_enabled = false;
+static bool interface_enabled = false;
 static volatile sig_atomic_t done = 0;
 
 /*------------------------------------- Privates -------------------------------------------------*/
 /**
  * @brief Blocks the reception of the signals SIGINT and SIGTERM, ignoring them.
- * 
+ *
  */
 static void lock_sign(void)
 {
@@ -48,7 +48,7 @@ static void lock_sign(void)
 
 /**
  * @brief Unblocks the reception of the signals SIGINT and SIGTERM, allowing their handling.
- * 
+ *
  */
 static void unlock_sign(void)
 {
@@ -62,7 +62,7 @@ static void unlock_sign(void)
 
 /**
  * @brief Handler for both signals, SIGINT and SIGTERM.
- * 
+ *
  * @param sig not used, only to be compliant with the type definition of the handler.
  */
 static void sig_handler(int sig)
@@ -71,15 +71,46 @@ static void sig_handler(int sig)
 }
 
 /**
+ * @brief Initializes the handling of the signals SIGINT and SIGTERM.
+ *
+ */
+static void sig_init(void)
+{
+    struct sigaction sigint, sigterm;
+
+    sigint.sa_handler = sig_handler;
+    sigint.sa_flags = SA_RESTART;
+    sigterm.sa_handler = sig_handler;
+    sigterm.sa_flags = SA_RESTART;
+
+    sigemptyset(&sigint.sa_mask);
+    if (sigaction(SIGINT, &sigint, NULL) == -1)
+    {
+        perror("sigaction on SIGINT");
+        exit(EXIT_FAILURE);
+    }
+
+    sigemptyset(&sigterm.sa_mask);
+    if (sigaction(SIGTERM, &sigint, NULL) == -1)
+    {
+        perror("sigaction on SIGTERM");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/**
  * @brief Task which manages the reception from serial and the further sending to the interface.
- * 
+ *
  */
 static void serial_task(void)
 {
     char buffer_serial[SERIAL_BUFFER_SIZE];
-    int n_bytes;
+    int retcode, n_bytes;
 
-    while (!done)
+    retcode = serial_open();
+    serial_enabled = (0 <= retcode) ? true : false;
+
+    while (serial_enabled & !done)
     {
         n_bytes = serial_receive(buffer_serial, SERIAL_BUFFER_SIZE);
         if (0 < n_bytes)
@@ -90,21 +121,21 @@ static void serial_task(void)
             {
                 if ((0 <= output && 2 >= output) && (0 == state || 1 == state))
                 {
-                    printf("Sending to interface: %s", buffer_serial);
+                    // printf("Sending to interface: %s", buffer_serial);
                     n_bytes = interface_send(buffer_serial, strlen(buffer_serial));
                     if (-1 == n_bytes)
                     {
-                        perror("ERROR writing to interface");
+                        perror("Interface: write");
                     }
                 }
                 else
                 {
-                    fprintf(stderr, "ERROR invalid output or state\r\n");
+                    fprintf(stderr, "Interface: invalid output or state\r\n");
                 }
             }
             else
             {
-                fprintf(stderr, "ERROR invalid serial frame\r\n");
+                fprintf(stderr, "Interface: invalid serial frame\r\n");
             }
         }
     }
@@ -114,16 +145,20 @@ static void serial_task(void)
 
 /**
  * @brief Task to manages the reception from interface and the further sending to serial
- * 
+ *
  * @param args not used, only to be compliant with p_threads library.
  * @return void* not used, only to be compliant with p_threads library.
  */
 static void *interface_task(void *args)
 {
     char buffer_interface[INTERFACE_BUFFER_SIZE];
-    int n_bytes;
+    int retcode, n_bytes;
 
-    while (!done)
+    retcode = interface_open();
+    interface_print_error(retcode);
+    interface_enabled = (0 == retcode) ? true : false;
+
+    while (interface_enabled)
     {
         n_bytes = interface_receive(buffer_interface, INTERFACE_BUFFER_SIZE);
         if (0 < n_bytes)
@@ -134,7 +169,7 @@ static void *interface_task(void *args)
             {
                 if ((0 <= output && 2 >= output) && (0 == state || 1 == state))
                 {
-                    printf("Sending to serial: %s", buffer_interface);
+                    // printf("Sending to serial: %s", buffer_interface);
                     n_bytes = serial_send(buffer_interface, strlen(buffer_interface));
                     if (-1 == n_bytes)
                     {
@@ -156,32 +191,6 @@ static void *interface_task(void *args)
     interface_close();
 }
 
-/**
- * @brief Initializes the handling of the signals SIGINT and SIGTERM.
- * 
- */
-static void sig_init(void)
-{
-    struct sigaction sig;
-
-    sig.sa_handler = sig_handler;
-    sig.sa_flags = 0;
-
-    sigemptyset(&sig.sa_mask);
-    if (sigaction(SIGINT, &sig, NULL) == -1)
-    {
-        perror("sigaction on SIGINT");
-        exit(EXIT_FAILURE);
-    }
-
-    sigemptyset(&sig.sa_mask);
-    if (sigaction(SIGTERM, &sig, NULL) == -1)
-    {
-        perror("sigaction on SIGTERM");
-        exit(EXIT_FAILURE);
-    }
-}
-
 /*------------------------------------- Main -----------------------------------------------------*/
 int main(void)
 {
@@ -189,20 +198,6 @@ int main(void)
     int retcode;
 
     printf("Inicio Serial Service\r\n");
-
-    retcode = serial_open();
-    if (0 != retcode)
-    {
-        fprintf(stderr, "ERROR during serial open\r\n");
-        exit(EXIT_FAILURE);
-    }
-
-    retcode = interface_open();
-    if (0 != retcode)
-    {
-        interface_print_error(retcode);
-        exit(EXIT_FAILURE);
-    }
 
     sig_init();
 

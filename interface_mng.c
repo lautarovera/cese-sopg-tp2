@@ -47,6 +47,19 @@ int interface_open(void)
         ret_val = 1;
     }
 
+    int reuse = 1;
+    if (setsockopt(interface_socket, SOL_SOCKET, SO_REUSEADDR,
+                   (const char *)&reuse, sizeof(reuse)) < 0)
+    {
+        perror("Interface setsockopt(SO_REUSEADDR)");
+    }
+
+    if (setsockopt(interface_socket, SOL_SOCKET, SO_REUSEPORT,
+                   (const char *)&reuse, sizeof(reuse)) < 0)
+    {
+        perror("Interface setsockopt(SO_REUSEPORT)");
+    }
+
     // Abrimos puerto con bind()
     if (bind(interface_socket, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) == -1)
     {
@@ -61,21 +74,23 @@ int interface_open(void)
         perror("Interface listen");
         ret_val = 3;
     }
-
-    while (0 == ret_val)
+    else
     {
-        addr_len = sizeof(struct sockaddr_in);
-        interface_fd = accept(interface_socket, (struct sockaddr *)&clientaddr, &addr_len);
-        if (-1 == interface_fd)
+        while (1)
         {
-            perror("Interface accept");
-            ret_val = -1;
-        }
-        else
-        {
-            inet_ntop(AF_INET, &(clientaddr.sin_addr), ip_client, sizeof(ip_client));
-            printf("server: connected from:  %s\n", ip_client);
-            break;
+            addr_len = sizeof(struct sockaddr_in);
+            interface_fd = accept(interface_socket, (struct sockaddr *)&clientaddr, &addr_len);
+            if (-1 == interface_fd)
+            {
+                perror("Interface accept");
+                ret_val = -1;
+            }
+            else
+            {
+                inet_ntop(AF_INET, &(clientaddr.sin_addr), ip_client, sizeof(ip_client));
+                printf("Interface: server connected from:  %s\n", ip_client);
+                break;
+            }
         }
     }
 
@@ -95,6 +110,7 @@ int interface_receive(char *buf, int size)
 void interface_close(void)
 {
     close(interface_fd);
+    printf("Interface: server disconnected");
 }
 
 void interface_print_error(int retcode)

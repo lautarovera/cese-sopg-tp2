@@ -74,4 +74,5 @@ int serial_receive(char *buf, int size)
 void serial_close(void)
 {
     close(serial_socket);
+    printf("Emulator disconnected\r\n");
 }
