@@ -79,9 +79,9 @@ static void sig_init(void)
     struct sigaction sigint, sigterm;
 
     sigint.sa_handler = sig_handler;
-    sigint.sa_flags = SA_RESTART;
+    sigint.sa_flags = 0; // SA_RESTART;
     sigterm.sa_handler = sig_handler;
-    sigterm.sa_flags = SA_RESTART;
+    sigterm.sa_flags = 0; // SA_RESTART;
 
     sigemptyset(&sigint.sa_mask);
     if (sigaction(SIGINT, &sigint, NULL) == -1)
@@ -107,35 +107,39 @@ static void serial_task(void)
     char buffer_serial[SERIAL_BUFFER_SIZE];
     int retcode, n_bytes;
 
-    retcode = serial_open();
-    serial_enabled = (0 <= retcode) ? true : false;
-
-    while (serial_enabled & !done)
+    while (!done)
     {
-        n_bytes = serial_receive(buffer_serial, SERIAL_BUFFER_SIZE);
-        if (0 < n_bytes)
+        if (!serial_enabled)
         {
-            int output, state;
-
-            if (2 == sscanf(buffer_serial, SERIAL_SWITCH_EVENT, &output, &state))
+            retcode = serial_open();
+            serial_enabled = (0 == retcode) ? true : false;
+        }
+        else
+        {
+            n_bytes = serial_receive(buffer_serial, SERIAL_BUFFER_SIZE);
+            if (0 < n_bytes)
             {
-                if ((0 <= output && 2 >= output) && (0 == state || 1 == state))
+                int output, state;
+
+                if (2 == sscanf(buffer_serial, SERIAL_SWITCH_EVENT, &output, &state))
                 {
-                    // printf("Sending to interface: %s", buffer_serial);
-                    n_bytes = interface_send(buffer_serial, strlen(buffer_serial));
-                    if (-1 == n_bytes)
+                    if ((0 <= output && 2 >= output) && (0 == state || 1 == state))
                     {
-                        perror("Interface: write");
+                        n_bytes = interface_send(buffer_serial, strlen(buffer_serial));
+                        if (-1 == n_bytes)
+                        {
+                            perror("Interface: write");
+                        }
+                    }
+                    else
+                    {
+                        fprintf(stderr, "Interface: invalid output or state\r\n");
                     }
                 }
                 else
                 {
-                    fprintf(stderr, "Interface: invalid output or state\r\n");
+                    fprintf(stderr, "Interface: invalid serial frame\r\n");
                 }
-            }
-            else
-            {
-                fprintf(stderr, "Interface: invalid serial frame\r\n");
             }
         }
     }
@@ -154,41 +158,48 @@ static void *interface_task(void *args)
     char buffer_interface[INTERFACE_BUFFER_SIZE];
     int retcode, n_bytes;
 
-    retcode = interface_open();
-    interface_print_error(retcode);
-    interface_enabled = (0 == retcode) ? true : false;
-
-    while (interface_enabled)
+    while (true)
     {
-        n_bytes = interface_receive(buffer_interface, INTERFACE_BUFFER_SIZE);
-        if (0 < n_bytes)
-        {
-            int output, state;
+        retcode = interface_open();
+        interface_enabled = (0 == retcode) ? true : false;
+        interface_print_error(retcode);
 
-            if (2 == sscanf(buffer_interface, INTERFACE_SET_EVENT, &output, &state))
+        while (interface_enabled)
+        {
+            n_bytes = interface_receive(buffer_interface, INTERFACE_BUFFER_SIZE);
+            if (0 < n_bytes)
             {
-                if ((0 <= output && 2 >= output) && (0 == state || 1 == state))
+                int output, state;
+
+                if (2 == sscanf(buffer_interface, INTERFACE_SET_EVENT, &output, &state))
                 {
-                    // printf("Sending to serial: %s", buffer_interface);
-                    n_bytes = serial_send(buffer_interface, strlen(buffer_interface));
-                    if (-1 == n_bytes)
+                    if ((0 <= output && 2 >= output) && (0 == state || 1 == state))
                     {
-                        perror("Serial: write");
+                        n_bytes = serial_send(buffer_interface, strlen(buffer_interface));
+                        if (-1 == n_bytes)
+                        {
+                            perror("Serial: write");
+                        }
+                    }
+                    else
+                    {
+                        fprintf(stderr, "Serial error: invalid output or state\r\n");
                     }
                 }
                 else
                 {
-                    fprintf(stderr, "Serial error: invalid output or state\r\n");
+                    fprintf(stderr, "Serial error: invalid interface frame\r\n");
                 }
             }
             else
             {
-                fprintf(stderr, "Serial error: invalid interface frame\r\n");
+                printf("Interface: server disconnected\r\n");
+                interface_enabled = false;
             }
         }
-    }
 
-    interface_close();
+        // interface_close();
+    }
 }
 
 /*------------------------------------- Main -----------------------------------------------------*/
@@ -199,25 +210,26 @@ int main(void)
 
     printf("Inicio Serial Service\r\n");
 
+    /* Initializes signals */
     sig_init();
-
+    /* Blocks the reception of signals */
     lock_sign();
-
+    /* Creates a dedicated thread for interface task */
     pthread_create(&interface_thread, NULL, interface_task, NULL);
-
+    /* Unblocks the reception of signals */
     unlock_sign();
-
+    /* Executes the serial task in the main thread */
     serial_task();
-
+    /* If a signal was received, the flag "done" will cancel the interface thread */
     if (done)
     {
         pthread_cancel(interface_thread);
     }
+    /* Otherwise, waits for the interface thread to finish */
     else
     {
         pthread_join(interface_thread, NULL);
     }
 
-    exit(EXIT_SUCCESS);
     return 0;
 }

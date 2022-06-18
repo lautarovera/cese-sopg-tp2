@@ -4,14 +4,15 @@
  * @brief Manages the connection with Emulator Service component
  * @version 0.1
  * @date 2022-06-11
- * 
+ *
  * @copyright Copyright (c) 2022
- * 
+ *
  */
 /*------------------------------------- Includes -------------------------------------------------*/
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
@@ -30,33 +31,42 @@ int serial_open(void)
 {
     struct sockaddr_in serveraddr;
     int flags;
-    int ret_val = 0;
+    int ret_val = 1;
+    static bool first = true;
 
-    serial_socket = socket(PF_INET, SOCK_STREAM, 0);
-    flags = fcntl(serial_socket, F_GETFL);
-    fcntl(serial_socket, F_SETFL, flags | O_NONBLOCK);
-    bzero((char *)&serveraddr, sizeof(serveraddr));
-    serveraddr.sin_family = AF_INET;
-    serveraddr.sin_port = htons(4040);
-    if (0 >= inet_pton(AF_INET, "127.0.0.1", &(serveraddr.sin_addr)))
+    if (true == first)
     {
-        fprintf(stderr, "Serial error: invalid server IP\r\n");
-        ret_val = -1;
+        serial_socket = socket(PF_INET, SOCK_STREAM, 0);
+        flags = fcntl(serial_socket, F_GETFL);
+        fcntl(serial_socket, F_SETFL, flags | O_NONBLOCK);
+        bzero((char *)&serveraddr, sizeof(serveraddr));
+        serveraddr.sin_family = AF_INET;
+        serveraddr.sin_port = htons(4040);
+        if (0 >= inet_pton(AF_INET, "127.0.0.1", &(serveraddr.sin_addr)))
+        {
+            fprintf(stderr, "Serial error: invalid server IP\r\n");
+            ret_val = -1;
+        }
+
+        first = (ret_val == 1) ? false : true;
     }
-
-    while (0 == ret_val)
+    else
     {
-        printf("Connecting emulator...\r\n");
+        printf("Serial: connecting emulator...\r\n");
         int retcode = connect(serial_socket, (const struct sockaddr *)&serveraddr, sizeof(serveraddr));
-        printf("\tConnect return code:%d\r\n", retcode);
+        printf("\tSerial: connect return code:%d\r\n", retcode);
         if (0 <= retcode)
         {
             usleep(100000);
-            break;
+            printf("Serial: emulator connected\r\n");
+            ret_val = 0;
         }
-        sleep(1);
+        else
+        {
+            ret_val = -2;
+            sleep(1);
+        }
     }
-    printf("Emulator connected\r\n");
 
     return ret_val;
 }
@@ -74,5 +84,4 @@ int serial_receive(char *buf, int size)
 void serial_close(void)
 {
     close(serial_socket);
-    printf("Emulator disconnected\r\n");
 }
