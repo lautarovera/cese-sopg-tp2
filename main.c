@@ -2,7 +2,7 @@
  * @file main.c
  * @author Lautaro Vera (lautarovera93@gmail.com)
  * @brief Serial Service component
- * @version 0.1
+ * @version 0.2
  * @date 2022-06-11
  *
  * @copyright Copyright (c) 2022
@@ -29,6 +29,7 @@
 /*------------------------------------- Globals --------------------------------------------------*/
 static bool serial_enabled = false;
 static bool interface_enabled = false;
+pthread_mutex_t mutex_interface_enabled = PTHREAD_MUTEX_INITIALIZER;
 static volatile sig_atomic_t done = 0;
 
 /*------------------------------------- Privates -------------------------------------------------*/
@@ -125,10 +126,15 @@ static void serial_task(void)
                 {
                     if ((0 <= output && 2 >= output) && (0 == state || 1 == state))
                     {
-                        n_bytes = interface_send(buffer_serial, strlen(buffer_serial));
-                        if (-1 == n_bytes)
+                        pthread_mutex_lock (&mutex_interface_enabled);
+                        if (interface_enabled)
                         {
-                            perror("Interface: write");
+                            pthread_mutex_unlock (&mutex_interface_enabled);
+                            n_bytes = interface_send(buffer_serial, strlen(buffer_serial));
+                            if (-1 == n_bytes)
+                            {
+                                perror("Interface: write");
+                            }
                         }
                     }
                     else
@@ -140,6 +146,10 @@ static void serial_task(void)
                 {
                     fprintf(stderr, "Interface: invalid serial frame\r\n");
                 }
+            }
+            else
+            {
+                usleep(10000);
             }
         }
     }
@@ -161,7 +171,9 @@ static void *interface_task(void *args)
     while (true)
     {
         retcode = interface_open();
+        pthread_mutex_lock (&mutex_interface_enabled);
         interface_enabled = (0 == retcode) ? true : false;
+        pthread_mutex_unlock (&mutex_interface_enabled);
         interface_print_error(retcode);
 
         while (interface_enabled)

@@ -52,18 +52,6 @@ int interface_open(void)
             ret_val = -1;
         }
 
-        int reuse = 1;
-        if (setsockopt(interface_socket, SOL_SOCKET, SO_REUSEADDR,
-                       (const char *)&reuse, sizeof(reuse)) < 0)
-        {
-            perror("Interface setsockopt(SO_REUSEADDR)");
-        }
-
-        if (setsockopt(interface_socket, SOL_SOCKET, SO_REUSEPORT,
-                       (const char *)&reuse, sizeof(reuse)) < 0)
-        {
-            perror("Interface setsockopt(SO_REUSEPORT)");
-        }
         /* Opens a port by bind */
         if (bind(interface_socket, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) == -1)
         {
